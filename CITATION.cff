@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+message: "If you use EHRSim, please cite it using the metadata below."
+type: software
+title: "EHRSim: Synthetic Primary-Care Electronic Health Record Simulation"
+version: 0.0.2
+license: MIT
+authors:
+  - family-names: "Abbas"
+    given-names: "Haroon"
+  - family-names: "Williamson"
+    given-names: "Elizabeth"
+abstract: >-
+  An R package for reproducible simulation of synthetic primary-care
+  electronic health records and counterfactual treatment-effect truth under
+  persistent, fixed-course, and episodic treatment strategies.

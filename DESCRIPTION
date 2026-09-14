@@ -1,0 +1,27 @@
+Package: EHRSim
+Type: Package
+Title: Simulate Synthetic EHR Data
+Version: 0.0.2
+Authors@R: c(
+    person("Haroon", "Abbas", email = "lsh2504466@alumni.lshtm.ac.uk", role = c("aut")),
+    person("Elizabeth", "Williamson", email = "Elizabeth.Williamson@lshtm.ac.uk", role = c("aut", "cph", "cre"))
+    )
+Description: Provides wrapper functions for simulating synthetic electronic
+    health data for one or multiple GP practices using a bundled
+    pipeline. It also constructs treatment-effect truth under persistent,
+    fixed-course, and episodic treatment strategies.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Imports:
+    data.table,
+    lubridate,
+    stringr,
+    survival,
+    truncnorm
+Suggests:
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
+Roxygen: list(markdown = TRUE)
+Config/roxygen2/version: 8.0.0
+URL: https://github.com/StatsFizz/EHRSim
+BugReports: https://github.com/StatsFizz/EHRSim/issues
