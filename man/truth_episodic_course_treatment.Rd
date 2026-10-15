@@ -7,17 +7,19 @@
 truth_episodic_course_treatment(pracid, gp_rel_size, seed, specs)
 }
 \arguments{
-\item{pracid}{Integer practice identifier.}
+\item{pracid}{One positive integer practice identifier.}
 
-\item{gp_rel_size}{Numeric relative size of the GP practice.}
+\item{gp_rel_size}{One positive numeric relative practice size.}
 
-\item{seed}{Integer random seed used for reproducibility.}
+\item{seed}{One non-negative integer random seed. Use the same practice
+inputs, package version and software environment as the corresponding EHR
+simulation.}
 
 \item{specs}{A named list containing \code{strategy_type}, \code{drug_name},
 \code{population}, \code{start_trigger_cols}, \code{time_zero_col}, a positive
 \code{course_duration_days}, \code{affected_cause}, \code{affected_hazard_column}, and
-positive numeric \code{horizons}. Optional stopping labels and columns must be
-supplied together.}
+positive numeric \code{horizons}. See the specification sections for meanings
+and optional fields.}
 }
 \value{
 A list containing:
@@ -25,12 +27,15 @@ A list containing:
 \item{strategy_family}{The treatment-strategy family, here \code{"episodic"}.}
 \item{specs}{The input treatment-effect specification.}
 \item{eligible}{The eligible population used for the treatment analysis.}
-\item{treatment_cohort}{The post-eligibility treatment cohort used in the analysis.}
-\item{truth_worlds}{The simulated intervention worlds generated for the strategy.}
+\item{treatment_cohort}{Follow-up intervals with natural and assigned
+exposure flags.}
+\item{truth_worlds}{Interval histories under natural, forced-treatment and
+forced-no-treatment strategies, with reconstructed hazards and survival.}
 \item{truth_treatment_effects}{Treatment-effect truth tables, including
 simulation metadata and the treatment coefficients used.}
-\item{triggers}{The trigger information used to define episodic treatment starts.}
-\item{episode_triggers}{Episode-level trigger information for the episodic strategy.}
+\item{triggers}{Available trigger dates before eligibility filtering.}
+\item{episode_triggers}{Eligible episode triggers with scheduled course
+starts, planned ends and stopping-version ends.}
 }
 }
 \description{
@@ -38,4 +43,134 @@ Runs the treatment-truth workflow for a single simulated GP practice under
 an episodic treatment strategy and returns the resulting truth objects. The
 target population is automatically restricted to latent-eligible patients
 who are observable in the final analyst-visible EHR at time zero.
+}
+\section{Episodic fields}{
+
+\code{strategy_type} accepts \code{"episodic_course"}, \code{"episodic_triggered"},
+\code{"episodic_course_one_stop"}, or \code{"episodic_course_restart"}. The trigger
+columns, duration, delay and \code{restart_after_stop} flag determine the rule;
+changing a type label alone does not enable restarting.
+
+\code{start_trigger_cols} contains existing comorbidity date columns. The first
+qualifying event defines time zero; later available trigger dates can begin
+further courses. First-MI and first-stroke columns represent first events,
+rather than every recurrent event. \code{course_duration_days} is positive and
+\code{course_delay_days} is non-negative, defaulting to zero when omitted. Optional
+\code{start_trigger_label} labels the coefficient output.
+
+\code{restart_after_stop} is a single logical value, defaulting to \code{FALSE}. With
+\code{FALSE}, the first qualifying patient-level stop applies across later
+courses. With \code{TRUE}, each course is matched to the first stop at or after
+its scheduled start and before its planned end. One stop can therefore
+affect several overlapping courses. Later triggers can initiate treatment
+again after an earlier course stopped.
+
+Overlapping courses produce binary treatment activity; they do not multiply
+the treatment effect. Stop fields produce both a no-stopping and a stopping
+version. Both retain course ends; only the latter applies event-triggered
+stops. The version names include \code{episodic_restart} when the restart flag is
+\code{TRUE}. Without stop fields, only the no-stopping version is constructed.
+}
+
+\section{Common specification fields}{
+
+\itemize{
+\item \code{drug_name}: treatment name or group with configured prescription
+coefficients in the simulator. An arbitrary medicine name does not create
+a new treatment model.
+\item \code{population}: a descriptive cohort label. It does not apply a custom
+patient filter; eligibility is derived from dates and prior medication use.
+\item \code{time_zero_col}: name assigned to the derived earliest qualifying date.
+This column is created by the engine and need not already exist in the
+comorbidity table.
+\item \code{affected_hazard_column}: existing log-hazard column to modify. The worked
+examples use \code{"lnhr_all_1"}, the non-communicable mortality component.
+Prescription coefficients are taken from the simulator's non-communicable
+mortality coefficient table; this function does not fit new coefficients.
+\item \code{affected_cause}: descriptive label for the modified component. Changing
+the label alone does not change which hazard is modified.
+\item \code{horizons}: finite positive follow-up durations in years. These are separate
+from treatment-course durations, which are specified in days.
+\item \code{stop_trigger_cols} and \code{stop_trigger_labels}: optional stopping-date column
+names and corresponding labels. Supply both with matching lengths, or omit
+both. Named trigger columns should exist in the comorbidity model.
+}
+}
+
+\section{Eligibility and observation}{
+
+Each call reruns the bundled simulation, retains the P7 hazard histories,
+and continues through P13 for the EHR observability check. Eligible patients
+have a qualifying trigger, no selected-group prescription before time zero,
+and observable EHR follow-up at time zero according to registration, transfer,
+linked death and study-end dates. Same-day first treatment and observation
+endpoint dates are allowed. A recorded diagnosis code is not required.
+
+The function constructs the default eligible cohort; it does not read an
+existing EHR object or infer a separately filtered analysis cohort. Transfer
+after time zero ends EHR observation and does not automatically stop the
+latent assigned treatment strategy. An empty eligible cohort causes an error.
+}
+
+\section{Effect summaries}{
+
+Start with \code{truth_treatment_effects$contrast_population}. Each row contrasts
+assigned treatment with assigned no treatment for one \code{truth_version} and
+\code{horizon_years}. \code{mean_survival_diff} and \code{mean_risk_diff} are probability
+differences; \code{mean_rmst_days_diff} is the difference in restricted mean
+survival time in days. Positive RMST differences mean longer expected
+survival under the assigned treatment rule. Outcomes combine all three
+mortality components, although the treatment modifies one component.
+
+\code{n_patients} counts patients represented in the contrast table. \code{n_complete}
+counts those with retained hazard follow-up through the requested horizon;
+only these patients contribute to the full-horizon mean. Different horizons
+can therefore use different subsets. Means can be \code{NaN} when no patients
+contribute; that is not evidence of a zero effect.
+
+Other shared tables include \code{contrast_patient}, \code{horizon_patient},
+\code{horizon_strategy}, \code{horizon_world}, \code{survival_intervals},
+\code{survival_curve_patient}, \code{survival_curve_mean}, \code{metadata} and \code{coefficients}.
+Use \code{metadata} to inspect the estimand and \code{coefficients} to inspect the
+configured hazard effect. Shared natural and no-treatment references are
+returned once in cleaned interval outputs; the contrast tables retain all
+requested stopping versions.
+
+Treatment truth is conditional on the retained patient and hazard histories.
+Changing treatment does not regenerate disease dates, other trajectories or
+trigger events under every intervention. These calculations do not by
+themselves establish external calibration or estimator performance.
+}
+
+\examples{
+episodic_specs <- list(
+  strategy_type = "episodic_course_restart",
+  restart_after_stop = TRUE,
+  drug_name = "aspirin",
+  population = "first_vascular_event_aspirin_naive",
+  start_trigger_label = "first_vascular_event",
+  start_trigger_cols = c("mi_event_first_date", "stroke_event_first_date",
+                         "chd_onset_date", "pvd_onset_date",
+                         "other_athero_onset_date"),
+  time_zero_col = "first_vascular_event_date",
+  course_duration_days = 365L,
+  course_delay_days = 0L,
+  stop_trigger_labels = c("upper_gi_bleed", "peptic_ulcer"),
+  stop_trigger_cols = c("upper_gi_bleed_event_date", "peptic_ulcer_event_date"),
+  affected_cause = "non_communicable_death",
+  affected_hazard_column = "lnhr_all_1",
+  horizons = c(1, 5, 10)
+)
+\dontrun{
+episodic_truth <- truth_episodic_course_treatment(
+  pracid = 1L, gp_rel_size = 1, seed = 34637L, specs = episodic_specs
+)
+episodic_truth$truth_treatment_effects$contrast_population
+head(episodic_truth$episode_triggers)
+}
+}
+\seealso{
+\code{\link[=truth_fixed_course_treatment]{truth_fixed_course_treatment()}},
+\code{\link[=truth_persistent_course_treatment]{truth_persistent_course_treatment()}}. For a walkthrough, use
+\code{vignette("treatment-truth", package = "EHRSim")}.
 }

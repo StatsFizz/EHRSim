@@ -183,8 +183,20 @@ p11_clinical[, sid := as.character(suppl_info_id)]
 bmi_map <- p11_clinical[sid != "0"][
   p10_measure[measure == "bmi"], on = "sid", nomatch = 0L
 ]
-add_metric("SCI-005", "P11", "Direct BMI rows assigned generic weight code",
-           bmi_map[clinical_code == e$codes$measure$weight, uniqueN(sid)], "0")
+bmi_codes <- unique(c(
+  e$codes$measure$bmi,
+  e$codes$measure$bmi_under,
+  e$codes$measure$bmi_normal,
+  e$codes$measure$bmi_over,
+  e$codes$measure$bmi_obese1,
+  e$codes$measure$bmi_obese2,
+  e$codes$measure$bmi_obese3
+))
+add_metric("SCI-005", "P11", "BMI rows with an incorrect code or entity",
+           bmi_map[
+             entity != e$codes$entity$bmi | !clinical_code %in% bmi_codes,
+             uniqueN(sid)
+           ], "0", "VERIFIED-FIXED")
 
 result_contacts <- p9_consultation[consultation_type == "results"]
 result_codes <- p11_clinical[result_contacts, on = "consultation_id", nomatch = 0L]
@@ -233,7 +245,9 @@ delay_codes <- unique(c(
   e$codes$clinical$cancer_bowel,
   e$codes$clinical$cancer_gastric
 ))
-delay_pre <- pre_p13_clinical[clinical_code %in% delay_codes]
+delay_pre <- pre_p13_clinical[
+  entity == e$codes$entity$med_hist & clinical_code %in% delay_codes
+]
 delay_pre[pre_p13_consultation[, .(
   consultation_id,
   original_type = consultation_type,
@@ -246,13 +260,14 @@ delay_pre[, intended_diagnosis :=
             original_type %chin% c("disease_onset", "data_transfer", "event") &
             grepl("cancer|dementia", original_trigger)]
 add_metric("SCI-007a", "P13", "Unrelated rows caught by cancer/dementia code collision",
-           delay_pre[intended_diagnosis == FALSE, .N], "0")
+           delay_pre[intended_diagnosis == FALSE, .N], "0", "VERIFIED-FIXED")
 
 delay_final <- final$clinical[delay_pre,
   on = .(consultation_id, clinical_code, entity), nomatch = 0L]
 delay_final[, delay_days := as.numeric(event_date - i.event_date)]
 add_metric("SCI-007b", "P13", "Unrelated rows delayed as diagnoses",
-           delay_final[delay_days > 0 & intended_diagnosis == FALSE, .N], "0")
+           delay_final[delay_days > 0 & intended_diagnosis == FALSE, .N], "0",
+           "VERIFIED-FIXED")
 
 register_entities <- unlist(e$codes$entity[c(
   "register_stroke", "register_chd", "register_diabetes", "register_cancer"

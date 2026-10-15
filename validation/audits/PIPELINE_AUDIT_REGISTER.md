@@ -17,7 +17,7 @@ studies against prespecified targets.
 ## Document control
 
 - Current package version: 0.0.2
-- Integrated register date: 2026-09-14
+- Integrated register date: 2026-10-15
 - Audited scope: package wrappers and P0a-P13 bundled pipeline
 - Controlled scenario: `pracid = 1`, `gp_rel_size = 1`, `seed = 34637`
 - Historical quantitative baseline: `BASELINE_2026-08-03.md`
@@ -42,12 +42,14 @@ The integrated audit draws on five evidence types:
    reproducibility, mathematics, validation and EHR cohort restriction.
 5. A clean package check and external installation smoke test.
 
-The controlled priority audit was rerun on 2026-09-14. It confirmed that
-interval-specific alcohol eligibility permits pre-onset advice and that exact
-prescription linkage eliminates the previously observed same-day mismatch.
-Because the alcohol correction generates additional consultations and consumes
-additional random draws, later P10-P13 counts were regenerated rather than
-assumed to equal the historical baseline.
+The controlled priority audit was rerun on 2026-10-15. It confirmed the earlier
+alcohol-advice and prescription-linkage corrections and verified that BMI,
+weight and height now retain distinct coding identities. It also confirmed that
+non-diagnosis rows no longer enter cancer/dementia delay logic. Current P10-P13
+counts were regenerated rather than assumed to equal the historical baseline;
+all 18 metrics matched the current table below. Separate deterministic P1
+replays reopened FIX-P1-02 because its one-year adjustment does not always
+restore the required registration-year ordering.
 
 ## Status definitions
 
@@ -93,12 +95,12 @@ assumed to equal the historical baseline.
 | P12 | Adds prescription product codes. |
 | P13 | Adds final EHR errors and extracts released tables. |
 
-## Verified historical remediation
+## Historical remediation and current status
 
-These corrections were made during the initial script audit and remain present
-in the current package. Cosmetic comment and header edits are omitted; this
-table records changes capable of affecting execution, interpretation or data
-integrity.
+These corrections were made during the script audit and subsequent remediation.
+Their status reflects the latest verification, including any reopened findings.
+Cosmetic comment and header edits are omitted; this table records changes
+capable of affecting execution, interpretation or data integrity.
 
 | ID | Stage | Historical problem | Current correction and evidence | Status |
 |---|---|---|---|---|
@@ -111,8 +113,9 @@ integrity.
 | FIX-P0C-03 | P0c/P6b | P6b correctly anchored refill adjustments at expected supply end, but a five-day NSAID course combined with an adjustment below -5 days could still generate the next issue before the preceding issue date. | `draw_next_presc()` now bounds the negative adjustment by the current supply duration. Early refill overlap is retained, including possible same-day issue for very short courses, while issue dates cannot move backwards. Focused tests cover both 28-day and five-day courses. | VERIFIED-FIXED |
 | FIX-P0E-01 | P0e | Code/frequency objects were assembled through fragile placeholders and a diabetes frequency object sat outside the expected hierarchy. | Named `codes` and `codes_freq_used` containers are used consistently. | VERIFIED-FIXED |
 | FIX-P0E-02 | P0e | Esomeprazole had a code/weight length mismatch. | Four product codes now have four corresponding weights. | VERIFIED-FIXED |
+| FIX-P0E-03 | P0e | BMI had no generic measurement code or entity and normal-BMI code 1624 collided with a skin-cancer code. | BMI now has generic clinical code 1 and entity 36; synthetic normal-BMI code 2310 replaces 1624. Focused tests enforce separation from cancer codes. | VERIFIED-FIXED |
 | FIX-P1-01 | P1 | `table()` indexing could shift ethnicity categories when a category was absent from 100 practice-level draws. | `tabulate(..., nbins = 5)` preserves all category positions. | VERIFIED-FIXED |
-| FIX-P1-02 | P1 | A rare draw could produce `max_reg <= min_reg`. | A guard moves `min_reg` back one year when the ordering fails. | VERIFIED-FIXED |
+| FIX-P1-02 | P1 | A rare draw could produce `max_reg <= min_reg`. | The current guard subtracts one from `min_reg`, which does not guarantee correct ordering. With `pracid = 1`, `gp_rel_size = 1`, and seed 18884, the guarded values remain `min_reg = 2010` and `max_reg = 2006`; seeds 22925 and 23853 also reproduce reversed bounds. Reopened on 2026-10-15; the pipeline code has not yet been corrected. | OPEN-CONFIRMED |
 | FIX-P2-01 | P2 | Patient-ID and chronology checks printed results but did not stop invalid simulations. | Hard failures now enforce unique IDs, birth before registration and exact adult registration-age bounds. | VERIFIED-FIXED |
 | FIX-P2-02 | P2 | Year-only age construction could leave patients younger than 18 or older than 95 on their exact registration date. | DOB is clamped using date-based 18- and 95-year boundaries. | VERIFIED-FIXED |
 | FIX-P4-01 | P4 | Strict/open trajectory boundaries omitted edge values and an earlier random rate draw was overwritten. | Lower bounds are inclusive, upper bounds explicit, missing trajectories default safely and only the retained rate draw remains. | VERIFIED-FIXED |
@@ -145,6 +148,7 @@ integrity.
 | FIX-P10-05 | P10 | Weight rounding probabilities and harmful-alcohol consultation measurement lists did not match the generation specification. | Current bands represent 60%, 10% and 30% rounding groups, and harmful-alcohol contacts are included in the relevant lists. | VERIFIED-FIXED |
 | FIX-P11-01 | P11 | Transferred disease history was omitted from disease-specific coding and hypertension follow-up matched the wrong trigger text. | `data_transfer` is coded with disease events and matching uses `ht_event`. | VERIFIED-FIXED |
 | FIX-P11-02 | P11 | BMI rows created by P10 could be dropped because only `measure == "weight"` was consumed. | Both weight and BMI enter coded and supplementary output construction. | VERIFIED-FIXED |
+| FIX-P11-03 | P11 | BMI and weight entered one coding block with the weight entity; uncategorised numerical BMI therefore received the generic weight code and all BMI supplementary rows were labelled as weight. | The retained `measure` field now assigns BMI code/entity separately from weight. The earlier comparison found 3,784 BMI rows carrying the generic weight code; this was not the total count of incorrectly labelled entities. The current controlled audit finds zero BMI rows with an incorrect code or entity. | VERIFIED-FIXED |
 | FIX-P12-01 | P12 | Reuse of a previous product code referenced the original vector rather than the progressively updated selection. | A sequential helper carries the final prior code forward within patient and drug. | VERIFIED-FIXED |
 | FIX-P13-01 | P13 | Patients without consultations retained a missing count, propagating missing ethnicity-recording probabilities. | Missing consultation counts are set to zero. | VERIFIED-FIXED |
 | FIX-P13-02 | P13 | GP-record death timing and transfer timing were not reconciled consistently. | GP death dates on or after transfer are removed while official linked mortality remains separate. | VERIFIED-FIXED |
@@ -152,10 +156,11 @@ integrity.
 | FIX-P13-04 | P13 | Dementia/cancer delay formulas could produce invalid probabilities. | Delay probabilities use `plogis()`. | VERIFIED-FIXED |
 | FIX-P13-05 | P13 | Post-transfer/death removal overwrote earlier hypertension-removal flags. | Removal conditions are combined rather than replaced. | VERIFIED-FIXED |
 | FIX-P13-06 | P9/P12/P13 | Independently ordered within-day row indices could pair a prescription with the wrong medication-generated consultation type. | P9 assigns a private prescription identifier, P12 carries it through product-code allocation, and P13 joins using that identifier plus patient/date before removing it from released tables. Duplicate, unmatched and row-count-changing linkage now fail explicitly; the controlled mismatch count fell from 22 to 0. | VERIFIED-FIXED |
+| FIX-P13-07 | P0e/P13 | Cancer/dementia delay transformations selected rows by clinical code alone, so the shared normal-BMI/skin-cancer code and other cross-context collisions could alter non-diagnosis rows. | The BMI collision was removed and diagnosis transformations now require the medical-history diagnosis entity. Unrelated selected and delayed rows fell from 129/52 to 0/0. | VERIFIED-FIXED |
 
 ## Current controlled audit
 
-The priority audit was rerun against 0.0.2 on 2026-09-14. The following metrics
+The priority audit was rerun against 0.0.2 on 2026-10-15. The following metrics
 were reproduced. A nonzero value is not automatically a defect: interpretation
 depends on the stated target and status.
 
@@ -170,12 +175,12 @@ depends on the stated target and status.
 | SCI-003b | Those patients receiving alcohol advice before harmful onset | 4 | VERIFIED-FIXED |
 | SCI-004a | Never-smoker recording probability at surgery | 30.3% | OPEN-CONFIRMED |
 | SCI-004b | Non-drinker recording probability at surgery | 32.2% | OPEN-CONFIRMED |
-| SCI-005 | Direct BMI rows assigned the generic weight code | 3,784 | OPEN-CONFIRMED |
+| SCI-005 | BMI rows with an incorrect code or entity | 0 | VERIFIED-FIXED |
 | SCI-006 | Results rows using an entity value as the clinical code | 2,900 | OPEN-CONFIRMED |
-| SCI-007a | Unrelated rows caught by the cancer/dementia code collision | 129 | OPEN-CONFIRMED |
-| SCI-007b | Unrelated rows delayed as diagnoses | 52 | OPEN-CONFIRMED |
-| SCI-008a | Clinical dates differing from their consultation dates | 676 | OPEN-CONFIRMED |
-| SCI-008b | Delayed cancer diagnoses retaining an original-date register row | 624 | OPEN-CONFIRMED |
+| SCI-007a | Unrelated rows caught by the cancer/dementia code collision | 0 | VERIFIED-FIXED |
+| SCI-007b | Unrelated rows delayed as diagnoses | 0 | VERIFIED-FIXED |
+| SCI-008a | Clinical dates differing from their consultation dates | 614 | OPEN-CONFIRMED |
+| SCI-008b | Delayed cancer diagnoses retaining an original-date register row | 614 | OPEN-CONFIRMED |
 | SCI-009 | Prescriptions paired to the wrong internal same-day contact type | 0 | VERIFIED-FIXED |
 | SCI-010a | Hypertension rows removed using lifetime consultation use | 14 | OPEN-CONFIRMED |
 | SCI-010b | Patients made completely unobserved for hypertension | 11 | OPEN-CONFIRMED |
@@ -193,18 +198,17 @@ The controlled run also passed the following structural checks:
 
 ## Open confirmed mechanisms
 
-These findings were identified after the historical remediation above. The
-controlled rerun demonstrates that they are still present and must not be
-described as fixed.
+These mechanisms remain unresolved in current source or controlled replays,
+including the incomplete P1 remediation above. They must not be described as
+fixed.
 
 | ID | Priority | Stage | Current mechanism and consequence | Required resolution |
 |---|---|---|---|---|
+| FIX-P1-02 | P1 | P1/P2 | Subtracting one from `min_reg` can leave it later than `max_reg`; P2 then samples a descending year range and can generate registrations after the practice's stated final registration year. | Enforce ordered registration-year bounds before patient generation and add regression tests for the reproduced seeds. |
 | SCI-001 | P0 | P0a/P5a/P5b | `genprevonset()` uses `cummax(current)` on the current row. First onset therefore has `*_prev = 1`, and later conditions generated in the same interval can use that state. | Confirm inclusive end-of-interval semantics or change to lagged history; record the decision and add a direct test. |
 | SCI-002 | P0 | P9 | COPD consultation intensity uses steroid prescriptions accumulated over later COPD follow-up, allowing future prescribing to affect earlier observation intensity. | Use time-available steroid history or an independent latent severity process. |
 | SCI-004 | P1 | P10 | Surgery rows retain the 30% `maybe` flag when the 15% `occasionally` flag is added for never-smokers/non-drinkers. | Reset mutually exclusive tiers or explicitly retain the approximately 30% target. |
-| SCI-005 | P0 | P11 | Direct numerical BMI with missing BMI category receives the generic weight code/entity. | Preserve measure identity and use an explicit numerical BMI code/entity. |
 | SCI-006 | P0 | P11 | Results contacts use `codes$entity$test_result` as `clinical_code`, mixing namespaces. | Add or designate a clinical result code and keep entity values separate. |
-| SCI-007 | P0 | P0e/P13 | Code 1624 is shared by normal BMI and other cancer, while diagnosis transformations select on code alone. | Select using diagnosis context/entity and validate dictionary collisions where semantic uniqueness is required. |
 | SCI-008 | P0 | P11/P13 | Diagnostic delay moves clinical event dates without moving the linked consultation or register row. | Define whether `event_date` may differ intentionally; otherwise move the complete observed episode. |
 | SCI-010 | P0 | P13 | Hypertension visibility depends on total consultations over complete follow-up, allowing future use to affect earlier recording. | Use consultation history available by the event date or a baseline recording propensity. |
 | SCI-012 | P1 | P9/P11 | Medication-generated surgery contacts receive generic diagnosis codes sampled independently of the originating drug/indication. | Condition codes on indication or represent the contact as generic medication activity. |
@@ -301,33 +305,37 @@ The package currently provides five exported functions:
 - `truth_fixed_course_treatment()`
 - `truth_episodic_course_treatment()`
 
-Current verification establishes that:
+Local verification on 2026-10-15 established that:
 
 - bundled pipeline scripts are located without personal absolute paths;
 - one- and many-practice simulations run through the full pipeline;
 - treatment wrappers validate inputs and internal state;
-- the test suite passes;
-- `R CMD check` completes with zero errors, warnings and notes in the verified
-  local environment; and
+- the test suite records 171 passing assertions, no failures and no skips;
+- its one warning concerns the installed `data.table` build under R 4.6.1
+  while the local runtime is R 4.6.0;
+- `R CMD check --no-manual` completes with zero errors, warnings and notes in
+  the verified local environment;
+- the treatment walkthrough builds and its optional strategy examples run; and
 - the installed package can be loaded and its exported functions called without
   manually sourcing package files.
 
-These package checks establish software integrity, not the completion of the
-scientific-validation queue above.
+These checks verify the exercised scenarios, not correctness for every possible
+seed or completion of the scientific-validation queue. The P1 replays above
+demonstrate an unresolved edge case outside the current regression suite.
 
 ## Acceptance gates and current state
 
 | Gate | Current state |
 |---|---|
-| Historical remediation documented | Complete for the substantive corrections recovered from the detailed audit. |
-| Controlled mechanism audit | Reproducible; SCI-003 and SCI-009 are remediated, while the remaining listed mechanisms or decisions are unresolved. |
-| Structural package tests | Passing in the verified local environment. |
-| Package check | Zero errors, warnings and notes in the verified local environment. |
-| External installation smoke test | Completed locally. |
-| Multi-seed pipeline stability | Not demonstrated by the repository audit material. |
+| Historical remediation documented | Documented; FIX-P1-02 was reopened after deterministic registration-year replays. |
+| Controlled mechanism audit | All 18 recorded metrics reproduced; SCI-003, SCI-005, SCI-007 and SCI-009 are remediated. Other listed open mechanisms and decisions remain unresolved. |
+| Structural package tests | 171 assertions passed, with no failures or skips; one local dependency build-version warning is explained above. |
+| Package check | `R CMD check --no-manual`: zero errors, warnings and notes on 2026-10-15. |
+| External installation smoke test | Installed archive verified locally, including all five exported functions, help pages and the treatment walkthrough. |
+| Multi-seed pipeline stability | Not established; P1 replays with seeds 18884, 22925 and 23853 reproduce invalid registration-year bounds. |
 | External epidemiological calibration | Not completed. |
 | Treatment-effect recovery after cohort revision | Must be regenerated for 0.0.2. |
-| GitHub release plumbing | Repository initialisation, CI, remote metadata and release tag remain outstanding. |
+| GitHub release plumbing | Git repository, `StatsFizz/EHRSim` remote, package URL/BugReports metadata and five-configuration CI workflow are configured. The next pushed commit still needs its CI run; no local release tag is present. |
 | Licensing | MIT is declared; ownership/permission for inherited code must be confirmed before public release. |
 
 ## Reproducing the audit

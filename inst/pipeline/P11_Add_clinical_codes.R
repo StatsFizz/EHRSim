@@ -170,18 +170,28 @@ rm(height)
 ### Weight/BMI
 weight <- clinmeasure[measure %chin% c("weight", "bmi") & !(is.na(data1)&is.na(data2)),
                       .(suppl_info_id, consultation_id, patient_id,
-                        event_date = date, data1, data2, measure_detail, 
-                        entity= codes$entity$weight)]
+                        event_date = date, data1, data2, measure, measure_detail,
+                        entity = fcase(
+                          measure == "weight", codes$entity$weight,
+                          measure == "bmi", codes$entity$bmi,
+                          default = NA_real_))]
 # Add clinical codes
 weight_code <- copy(weight)
 weight_code[, clinical_code := fcase(
-    measure_detail=="Underweight",  sample(codes$measure$bmi_under,  size=.N, replace=TRUE),
-    measure_detail=="Healthy",      sample(codes$measure$bmi_normal, size=.N, replace=TRUE),
-    measure_detail=="Overweight",   sample(codes$measure$bmi_over,   size=.N, replace=TRUE),
-    measure_detail=="Obese I",      sample(codes$measure$bmi_obese1, size=.N, replace=TRUE),
-    measure_detail=="Obese II",     sample(codes$measure$bmi_obese2, size=.N, replace=TRUE),
-    measure_detail=="Obese III",    sample(codes$measure$bmi_obese3, size=.N, replace=TRUE),
-    is.na(measure_detail), codes$measure$weight,
+    measure == "bmi" & measure_detail == "Underweight",
+      sample(codes$measure$bmi_under, size=.N, replace=TRUE),
+    measure == "bmi" & measure_detail == "Healthy",
+      sample(codes$measure$bmi_normal, size=.N, replace=TRUE),
+    measure == "bmi" & measure_detail == "Overweight",
+      sample(codes$measure$bmi_over, size=.N, replace=TRUE),
+    measure == "bmi" & measure_detail == "Obese I",
+      sample(codes$measure$bmi_obese1, size=.N, replace=TRUE),
+    measure == "bmi" & measure_detail == "Obese II",
+      sample(codes$measure$bmi_obese2, size=.N, replace=TRUE),
+    measure == "bmi" & measure_detail == "Obese III",
+      sample(codes$measure$bmi_obese3, size=.N, replace=TRUE),
+    measure == "bmi" & is.na(measure_detail), codes$measure$bmi,
+    measure == "weight", codes$measure$weight,
     default = NA)][,c("data1", "data2"):=NULL] 
 
 # Separate out supplementary (numerical) data
@@ -527,7 +537,6 @@ rm(height_suppl, weight_suppl, smoke_suppl, alcohol_suppl)
 
 # Tidy data
 setorder(supplement, patient_id, suppl_info_id)
-
 
 
 

@@ -274,7 +274,8 @@ clinical_table <- merge(clinical_table, patient_table[,
                       .(patient_id, sex, transfer_date, death_date)],
                        by = "patient_id",  all.x = TRUE)
 
-clinical_table[clinical_code %in% codes$clinical$ht_event, 
+clinical_table[entity == codes$entity$med_hist &
+                 clinical_code %in% codes$clinical$ht_event,
                clinical_code:=fifelse(
                  1/(1 + exp(-(-1.5 + 0.05*(sex=="Male") -0.25*N))) > runif(.N),
                  NA_integer_, clinical_code)]
@@ -287,14 +288,16 @@ clinical_table[, diag_rm:= is.na(clinical_code)]
 clinical_table[patient, deprivation_person:=i.deprivation_person, on = "patient_id"]
 clinical_table <- merge(clinical_table, deathdate[, .(patient_id, deathdate)],
                        by = "patient_id",  all.x = TRUE)
-clinical_table[clinical_code %in% codes$clinical$dementia, 
+clinical_table[entity == codes$entity$med_hist &
+                 clinical_code %in% codes$clinical$dementia,
                event_date:=fifelse(
                  plogis(-1.5 - 0.25*deprivation_person) > runif(.N),
                 as.Date(event_date + round(abs(rnorm(.N, 0, 365.25)))), event_date)]
 
 
 ### Change some cancer dates (often later, particularly for higher deprivation)
-clinical_table[clinical_code %in% c(codes$clinical$cancer_prostate,
+clinical_table[entity == codes$entity$med_hist &
+                 clinical_code %in% c(codes$clinical$cancer_prostate,
                                     codes$clinical$cancer_breast,
                                     codes$clinical$cancer_other_f, 
                                     codes$clinical$cancer_other_m),
@@ -303,7 +306,8 @@ clinical_table[clinical_code %in% c(codes$clinical$cancer_prostate,
                  as.Date(event_date + round(abs(rnorm(.N, 0, 60)))), event_date)]
 
 ### Change some cancer dates (often later, particularly for higher deprivation)
-clinical_table[clinical_code %in% c(codes$clinical$cancer_lung,
+clinical_table[entity == codes$entity$med_hist &
+                 clinical_code %in% c(codes$clinical$cancer_lung,
                                     codes$clinical$cancer_bowel,
                                     codes$clinical$cancer_gastric),
                event_date:=fifelse(
@@ -415,7 +419,6 @@ tables[["supplementary"]] <- supplementary_information_table
 
 rm(patient_table, imd_table, death_linked_table, clinical_table,
    supplementary_information_table, prescription_table)
-
 
 
 

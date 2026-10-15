@@ -393,8 +393,9 @@ codes$common$acute_pharyngitis <- 407
 #############################
 
 
-codes$measure$height <-  3
-codes$measure$weight <-  2
+codes$measure$bmi <- 1
+codes$measure$weight <- 2
+codes$measure$height <- 3
 codes$measure$smoking <- 4
 codes$measure$tobacco <- 54 
 codes$measure$alcohol <- 5   # NB: made this one up 
@@ -412,9 +413,9 @@ codes$measure$alc_ex <-  c(19495,19493,385)
 codes$measure$alc_cr <-  c(649, 956, 322, 8999, 99877, 12982) 
 codes$measure$alc_hm <-  c(102448, 12976, 12982, 94670, 1399, 30460)
 
-# Codes by weight/BMI cat    NB: Made actual numbers up
+# Synthetic codes by BMI category
 codes$measure$bmi_under <- c(1626, 2298, 2300)
-codes$measure$bmi_normal <- c(1624, 2299, 2301)
+codes$measure$bmi_normal <- c(2310, 2299, 2301)
 codes$measure$bmi_over <- c(1625, 2302, 2303)
 codes$measure$bmi_obese1 <- c(1627, 2304, 2305)
 codes$measure$bmi_obese2 <- c(1628, 2306, 2307)
@@ -462,5 +463,5 @@ codes$entity$register_diabetes<-32
 codes$entity$register_cancer<-33
 codes$entity$communication <- 34
 codes$entity$admin <- 35
-
+codes$entity$bmi <- 36
 

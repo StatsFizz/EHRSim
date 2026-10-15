@@ -15,6 +15,10 @@ defects, corrections and retained assumptions.
 - `audits/BASELINE_2026-08-03.md`: fixed-seed evidence from the audited pipeline.
 - `audits/run_priority_audit.R`: reruns the priority mechanism checks.
 
+The Markdown register is the maintained audit record. Generated HTML previews
+are not versioned and must be regenerated from the current Markdown before
+use; an older local preview may describe defects that have since been fixed.
+
 ## Running the priority audit
 
 From the EHRSim package root:

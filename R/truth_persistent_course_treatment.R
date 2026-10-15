@@ -16,24 +16,64 @@
 #' target population is automatically restricted to latent-eligible patients
 #' who are observable in the final analyst-visible EHR at time zero.
 #'
-#' @param pracid Integer practice identifier.
-#' @param gp_rel_size Numeric relative size of the GP practice.
-#' @param seed Integer random seed used for reproducibility.
+#' @inheritParams truth_fixed_course_treatment
 #' @param specs A named list containing `drug_name`, `population`,
 #'   `start_trigger_label`, `strategy_context_label`, `start_trigger_col`,
 #'   `time_zero_col`, `affected_cause`, `affected_hazard_column`, and positive
-#'   numeric `horizons`. Optional stopping labels and columns must be supplied
-#'   together.
+#'   numeric `horizons`. See the specification sections for meanings and
+#'   optional fields.
+#'
+#' @inheritSection truth_fixed_course_treatment Common specification fields
+#' @section Persistent fields:
+#' `start_trigger_col` is one existing comorbidity date column, for example
+#' `"mi_event_first_date"`. It defines the first qualifying date and initiation
+#' time. Use the singular field name for this wrapper.
+#'
+#' `start_trigger_label` and `strategy_context_label` are required descriptive
+#' labels. The persistent rule has no fixed course duration or initiation-delay
+#' field. Assigned treatment begins at time zero and continues through the
+#' retained hazard follow-up. With stopping fields, the engine constructs
+#' `persistent_no_stopping` and `persistent_with_stopping`; the latter stops at
+#' the first qualifying event. There is no restarting after that stop in this
+#' family. Without stop fields, only the no-stopping version is constructed.
+#'
+#' @inheritSection truth_fixed_course_treatment Eligibility and observation
+#' @inheritSection truth_fixed_course_treatment Effect summaries
 #'
 #' @return A list containing:
 #' \describe{
 #'   \item{strategy_family}{The treatment-strategy family, here `"persistent"`.}
 #'   \item{specs}{The input treatment-effect specification.}
 #'   \item{eligible}{The eligible population used for the treatment analysis.}
-#'   \item{treatment_cohort}{The post-eligibility treatment cohort used in the analysis.}
-#'   \item{truth_worlds}{The simulated intervention worlds generated for the strategy.}
+#'   \item{treatment_cohort}{Follow-up intervals with natural and assigned
+#'   exposure flags.}
+#'   \item{truth_worlds}{Interval histories under natural, forced-treatment and
+#'   forced-no-treatment strategies, with reconstructed hazards and survival.}
 #'   \item{truth_treatment_effects}{Treatment-effect truth tables, including
 #'   simulation metadata and the treatment coefficients used.}
+#' }
+#' @seealso [truth_fixed_course_treatment()],
+#'   [truth_episodic_course_treatment()]. For a walkthrough, use
+#'   `vignette("treatment-truth", package = "EHRSim")`.
+#' @examples
+#' persistent_specs <- list(
+#'   drug_name = "aspirin",
+#'   population = "first_mi_aspirin_naive",
+#'   start_trigger_label = "first_mi",
+#'   strategy_context_label = "after_first_mi",
+#'   start_trigger_col = "mi_event_first_date",
+#'   time_zero_col = "first_mi_date",
+#'   stop_trigger_labels = c("upper_gi_bleed", "peptic_ulcer"),
+#'   stop_trigger_cols = c("upper_gi_bleed_event_date", "peptic_ulcer_event_date"),
+#'   affected_cause = "non_communicable_death",
+#'   affected_hazard_column = "lnhr_all_1",
+#'   horizons = c(1, 5, 10)
+#' )
+#' \dontrun{
+#' persistent_truth <- truth_persistent_course_treatment(
+#'   pracid = 1L, gp_rel_size = 1, seed = 34637L, specs = persistent_specs
+#' )
+#' persistent_truth$truth_treatment_effects$contrast_population
 #' }
 #' @export
 truth_persistent_course_treatment <- function(pracid, gp_rel_size, seed, specs){

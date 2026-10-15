@@ -6,3 +6,4 @@
 Simulated_data/
 *.tar.gz
 *.Rcheck/
+/validation/audits/PIPELINE_AUDIT_REGISTER.html

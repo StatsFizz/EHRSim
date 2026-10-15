@@ -95,6 +95,29 @@ writes merged tables, `"per_gp"` writes separate practice folders, and
 
 ## Treatment-effect truth
 
+The [treatment walkthrough](vignettes/treatment-truth.Rmd) takes a fixed-course
+example from specification to RMST output, then shows delayed, persistent and
+episodic variations. The function help pages provide the input reference.
+
+```r
+vignette("treatment-truth", package = "EHRSim")
+?truth_fixed_course_treatment
+?truth_persistent_course_treatment
+?truth_episodic_course_treatment
+```
+
+For a GitHub installation that includes the rendered walkthrough, first
+install the vignette-building packages and enable vignette building:
+
+```r
+install.packages(c("knitr", "rmarkdown"))
+remotes::install_github("StatsFizz/EHRSim", build_vignettes = TRUE)
+```
+
+The vignette evaluates one small fixed-course simulation when built. Other
+strategy runs are optional examples. Building also requires Pandoc, which is
+included with RStudio.
+
 All treatment wrappers require `pracid`, `gp_rel_size`, `seed`, and a named
 `specs` list. They reproduce the complete simulation for those inputs, preserve
 the latent mortality-hazard state at P7, and continue through P13 to construct
@@ -165,6 +188,7 @@ fixed_specs <- list(
   strategy_type = "fixed_course_once",
   drug_name = "aspirin",
   population = "first_mi_aspirin_naive",
+  start_trigger_label = "first_mi",
   start_trigger_cols = "mi_event_first_date",
   time_zero_col = "first_mi_date",
   course_duration_days = 365L,
@@ -182,6 +206,16 @@ fixed_truth <- truth_fixed_course_treatment(
 )
 ```
 
+To delay the fixed course, retain eligibility at MI and change the schedule:
+
+```r
+delayed_specs <- fixed_specs
+delayed_specs$strategy_type <- "fixed_course_delayed"
+delayed_specs$course_delay_days <- 30L
+```
+
+Pass `delayed_specs` to `truth_fixed_course_treatment()` to run that variation.
+
 ### Episodic strategy
 
 Episodic strategies can start a new course after each qualifying event. The
@@ -193,6 +227,7 @@ episodic_specs <- list(
   restart_after_stop = TRUE,
   drug_name = "aspirin",
   population = "first_vascular_event_aspirin_naive",
+  start_trigger_label = "first_vascular_event",
   start_trigger_cols = c(
     "mi_event_first_date",
     "stroke_event_first_date",

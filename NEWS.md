@@ -1,5 +1,18 @@
 # EHRSim 0.0.2
 
+* Added a treatment-truth walkthrough vignette and expanded the three treatment
+  help pages with specification fields, cohort eligibility, stopping and
+  restarting rules, and RMST interpretation. The walkthrough consolidates the
+  earlier standalone recipe scripts.
+
+* BMI, weight, and height now retain distinct measurement codes and entities.
+  Generic BMI uses clinical code 1 and entity 36, and the normal-BMI code no
+  longer collides with skin cancer.
+
+* Cancer, dementia, and hypertension observation transformations now require
+  diagnosis context, preventing unrelated measurement rows from being treated
+  as diagnoses when numeric codes overlap.
+
 * Alcohol-advice eligibility is now evaluated within each clinical interval, so
   harmful alcohol use arising later cannot suppress advice earlier in follow-up.
 

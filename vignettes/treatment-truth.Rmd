@@ -1,0 +1,368 @@
+---
+title: "Using the treatment-effect truth layer"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Using the treatment-effect truth layer}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+This walkthrough constructs a treatment specification, runs the truth layer,
+and explains the resulting cohort and treatment-effect tables. One fixed-course
+example is evaluated when the vignette is built. The subsequent strategy
+variations are optional code examples that you can run separately.
+
+The example assigns a 365-day aspirin course after first myocardial infarction
+(MI). The duration is a demonstration of a simulator rule. It is not a claim
+that this schedule or the configured hazard coefficients have been clinically
+validated.
+
+## Choose a treatment rule
+
+| Function | Rule |
+|---|---|
+| `truth_persistent_course_treatment()` | Start at a qualifying event and continue, optionally stopping at a later event. |
+| `truth_fixed_course_treatment()` | Give one course, with an optional initiation delay and event-triggered stopping. |
+| `truth_episodic_course_treatment()` | Allow qualifying events to begin further courses, with optional restarting after a stop. |
+
+Each call reproduces the complete practice simulation using the supplied
+inputs. The layer retains the P7 hazard histories and continues through P13 to
+check that the eligible patients are observable in the analyst-visible EHR at
+time zero. You do not need to source the pipeline scripts or run
+`simulate_one_gp()` first.
+
+```{r practice-inputs}
+library(EHRSim)
+inputs <- list(pracid = 1L, gp_rel_size = 1, seed = 34637L)
+```
+
+Practice size is relative rather than an exact patient count. Changing these
+inputs defines a different simulation. For a matching EHR run, retain the same
+inputs, package version and software environment.
+
+## Define the fixed course
+
+```{r fixed-specification}
+fixed_specs <- list(
+  strategy_type = "fixed_course_once",
+  drug_name = "aspirin",
+  population = "first_mi_aspirin_naive",
+  start_trigger_label = "first_mi",
+  start_trigger_cols = "mi_event_first_date",
+  time_zero_col = "first_mi_date",
+  course_duration_days = 365L,
+  course_delay_days = 0L,
+  stop_trigger_labels = c("upper_gi_bleed", "peptic_ulcer"),
+  stop_trigger_cols = c(
+    "upper_gi_bleed_event_date",
+    "peptic_ulcer_event_date"
+  ),
+  affected_cause = "non_communicable_death",
+  affected_hazard_column = "lnhr_all_1",
+  horizons = c(1, 5, 10)
+)
+```
+
+The fields have different roles:
+
+| Field | What it controls |
+|---|---|
+| `drug_name` | The selected treatment group and configured prescription coefficients. |
+| `start_trigger_cols` | Existing disease-date columns used to find the earliest qualifying event. |
+| `time_zero_col` | The name assigned to that derived event date. The engine creates this column. |
+| `population`, `start_trigger_label` | Descriptive labels for the cohort and trigger. They do not apply a custom patient filter. |
+| `course_duration_days`, `course_delay_days` | The scheduled course length and initiation delay, both in days. |
+| `stop_trigger_cols`, `stop_trigger_labels` | Stopping dates and matching descriptive labels. Supply both fields together or omit both. |
+| `affected_hazard_column` | The hazard modified by the treatment coefficient. `lnhr_all_1` represents non-communicable mortality. |
+| `affected_cause` | A label describing the modified component; changing it alone does not switch hazards. |
+| `horizons` | Follow-up times in years, independently of course duration. |
+
+The simulator must contain the named trigger columns and the selected
+treatment's coefficients. A new drug name or population label does not add a
+new drug model or eligibility rule. The help page gives the full input
+reference:
+
+```{r function-help, eval=FALSE}
+?truth_fixed_course_treatment
+```
+
+## Run and inspect the cohort
+
+```{r run-fixed-course, results='hide', message=FALSE, warning=FALSE}
+fixed_truth <- truth_fixed_course_treatment(
+  pracid = inputs$pracid,
+  gp_rel_size = inputs$gp_rel_size,
+  seed = inputs$seed,
+  specs = fixed_specs
+)
+```
+
+The eligible cohort consists of patients with a qualifying MI date, no
+prescription of the selected treatment group before that date, and EHR
+observability at that date. Same-day first treatment is allowed. Registration,
+transfer, linked death and study end determine observability, with endpoint
+dates included. A recorded MI diagnosis code is not required for entry.
+
+This is the package's default eligible cohort. If you subsequently apply
+additional filters to analyst-visible EHR data, this default truth population
+does not automatically become that separately selected analysis cohort.
+
+```{r eligible-patients}
+nrow(fixed_truth$eligible)
+schedule <- as.data.frame(fixed_truth$eligible)[, c(
+  "patient_id", "time_zero", "course_start_date",
+  "planned_course_end", "actual_course_end"
+), drop = FALSE]
+knitr::kable(
+  head(schedule), row.names = FALSE,
+  col.names = c("Patient", "Time zero", "Course start", "Planned end", "Stopping end")
+)
+```
+
+`planned_course_end` is 365 days after scheduled initiation.
+`actual_course_end` describes the stopping version: it also accounts for the
+first qualifying stop and the retained follow-up boundary. It is not the
+course end used in every returned world.
+
+Because the specification includes stopping events, the engine constructs two
+versions. `fixed_course_no_stopping` ignores those events but still ends at the
+scheduled course end. `fixed_course_with_stopping` can end sooner at an event.
+Both are compared with assigned no aspirin in the same eligible patients.
+
+## Read the treatment effects
+
+```{r effect-summary}
+effects <- fixed_truth$truth_treatment_effects
+summary <- as.data.frame(effects$contrast_population)
+summary <- summary[, c(
+  "truth_version", "horizon_years", "n_patients", "n_complete",
+  "mean_survival_diff", "mean_risk_diff", "mean_rmst_days_diff"
+), drop = FALSE]
+knitr::kable(
+  summary, digits = 3, row.names = FALSE,
+  col.names = c("Stopping rule", "Horizon (years)", "Patients", "Complete",
+                "Survival difference", "Risk difference", "RMST difference (days)")
+)
+```
+
+Each row is assigned treatment minus assigned no treatment, for one stopping
+version and one requested horizon. The natural treatment history is an
+additional reference; it is not the comparator in this main contrast table.
+
+| Column | Interpretation |
+|---|---|
+| `n_patients` | Patients represented in the constructed contrast table. |
+| `n_complete` | Patients whose retained hazard follow-up covers the full horizon and contributes to the mean effect. |
+| `mean_survival_diff` | Difference in all-cause survival probability. |
+| `mean_risk_diff` | Difference in all-cause death risk. |
+| `mean_rmst_days_diff` | Difference in restricted mean survival time (RMST), in days. Positive values mean longer expected survival under the assigned treatment rule. |
+
+RMST is expected survival time accumulated up to the selected horizon. The
+treatment modifies one mortality component, while these survival, risk and
+RMST summaries use the combined all-cause mortality hazard.
+A negative risk difference means lower simulated death risk under treatment.
+Multiply a probability difference by 100 to express it in percentage points.
+
+Check `n_complete` before comparing horizons. The current engine averages
+full-horizon effects only for patients with sufficient retained hazard
+follow-up. The 1-, 5- and 10-year rows can therefore describe different subsets.
+If no patients contribute, a summary mean can be `NaN`, which means no
+contributors rather than no treatment effect.
+
+Stopping and no-stopping results can be identical if there are no relevant
+stopping events during the active courses in the contributing subset. A
+stopping rule does not guarantee that the generated population exercises it.
+
+The coefficient table shows the configured hazard ratio while treatment is
+active:
+
+```{r configured-coefficients}
+coefficient_summary <- as.data.frame(effects$coefficients)[, c(
+  "truth_version", "drug", "log_hr_while_active", "hr_while_active", "hr_inactive"
+), drop = FALSE]
+knitr::kable(
+  coefficient_summary, digits = 3, row.names = FALSE,
+  col.names = c("Stopping rule", "Drug", "Active log-HR", "Active HR", "Inactive HR")
+)
+```
+
+The hazard ratio is an input to the simulator, whereas the RMST difference
+depends on that coefficient together with the population's hazard histories,
+treatment schedules and horizon. The two quantities are not interchangeable.
+
+## Inspect additional output
+
+| Returned object | Use |
+|---|---|
+| `eligible` | Check who entered the cohort and their time zero. |
+| `treatment_cohort` | Inspect follow-up intervals and exposure flags. |
+| `truth_worlds` | Inspect natural, assigned-treatment and assigned-no-treatment interval histories. |
+| `truth_treatment_effects$contrast_patient` | Inspect individual full-horizon contrasts. |
+| `truth_treatment_effects$horizon_patient` | Inspect each patient's follow-up completeness, survival, risk and RMST. |
+| `truth_treatment_effects$survival_curve_mean` | Inspect mean survival by grid time and the number contributing. |
+| `truth_treatment_effects$metadata` | Inspect the estimand labels and cohort basis. |
+| `truth_treatment_effects$coefficients` | Inspect the treatment coefficients used. |
+
+Shared natural and no-treatment reference histories are returned once in the
+cleaned interval outputs. Use the provided contrast tables, which retain both
+stopping versions, instead of manually joining those cleaned worlds by version.
+
+```{r inspect-more, eval=FALSE}
+effects$metadata
+head(effects$horizon_patient)
+head(effects$survival_curve_mean)
+```
+
+## Adapt the specification
+
+The following changes reuse the specification. Each function call runs a new
+simulation; run the variations individually when exploring them.
+
+### Omit event-triggered stopping
+
+```{r omit-stopping, eval=FALSE}
+no_stop_specs <- fixed_specs
+no_stop_specs$stop_trigger_cols <- NULL
+no_stop_specs$stop_trigger_labels <- NULL
+no_stop_truth <- truth_fixed_course_treatment(
+  pracid = inputs$pracid, gp_rel_size = inputs$gp_rel_size,
+  seed = inputs$seed, specs = no_stop_specs
+)
+```
+
+Removing both stop fields produces only the no-stopping version. The fixed
+course still ends at its scheduled end.
+
+### Delay initiation by 30 days
+
+```{r delayed-course, eval=FALSE}
+delayed_specs <- fixed_specs
+delayed_specs$strategy_type <- "fixed_course_delayed"
+delayed_specs$course_delay_days <- 30L
+delayed_truth <- truth_fixed_course_treatment(
+  pracid = inputs$pracid, gp_rel_size = inputs$gp_rel_size,
+  seed = inputs$seed, specs = delayed_specs
+)
+```
+
+Eligibility and follow-up remain anchored at MI; treatment starts 30 days
+later. Patients are not selected for surviving until initiation. A stopping
+event during the delay can prevent treatment from becoming active in the
+stopping version. Setting the type label alone would not introduce the delay.
+
+### Continue treatment persistently
+
+```{r persistent-treatment, eval=FALSE}
+persistent_specs <- fixed_specs
+persistent_specs[c("strategy_type", "start_trigger_cols",
+                   "course_duration_days", "course_delay_days")] <- NULL
+persistent_specs$start_trigger_col <- "mi_event_first_date"
+persistent_specs$strategy_context_label <- "after_first_mi"
+persistent_truth <- truth_persistent_course_treatment(
+  pracid = inputs$pracid, gp_rel_size = inputs$gp_rel_size,
+  seed = inputs$seed, specs = persistent_specs
+)
+```
+
+The persistent wrapper uses the singular `start_trigger_col` and requires
+`strategy_context_label`. It begins treatment at the trigger and continues
+through retained follow-up, optionally stopping at a qualifying event. This
+family does not restart after a stop.
+
+### Allow episodic courses and restarting
+
+```{r episodic-treatment, eval=FALSE}
+episodic_specs <- fixed_specs
+episodic_specs$strategy_type <- "episodic_course_restart"
+episodic_specs$restart_after_stop <- TRUE
+episodic_specs$population <- "first_vascular_event_aspirin_naive"
+episodic_specs$start_trigger_label <- "first_vascular_event"
+episodic_specs$start_trigger_cols <- c(
+  "mi_event_first_date", "stroke_event_first_date", "chd_onset_date",
+  "pvd_onset_date", "other_athero_onset_date"
+)
+episodic_specs$time_zero_col <- "first_vascular_event_date"
+episodic_truth <- truth_episodic_course_treatment(
+  pracid = inputs$pracid, gp_rel_size = inputs$gp_rel_size,
+  seed = inputs$seed, specs = episodic_specs
+)
+head(episodic_truth$episode_triggers)
+```
+
+The broader trigger set changes the eligible population. Its earliest date
+defines time zero; later available trigger dates can start further courses.
+First-MI and first-stroke columns do not represent every recurrent event.
+
+With `restart_after_stop = TRUE`, a course takes its first stopping event at
+or after its scheduled start and before its planned end. The same event can
+stop several overlapping courses. A later trigger can start another course.
+Overlapping active courses still give binary treatment exposure, not extra
+doses or a multiplied effect.
+
+To retain stopping without restarting, set both
+`strategy_type = "episodic_course_one_stop"` and `restart_after_stop = FALSE`.
+The first qualifying patient-level stop then applies across later courses.
+
+To use the first of several triggers for just one course, pass the broader
+trigger set to the fixed-course wrapper with
+`strategy_type = "multi_trigger_fixed_course"`. The function family, trigger
+columns and restart flag determine the mechanism, rather than a descriptive
+label alone.
+
+## Relate truth to the EHR and retain a run record
+
+Generate the matching analyst-visible EHR with the same practice inputs:
+
+```{r matching-ehr, eval=FALSE}
+ehr <- simulate_one_gp(
+  pracid = inputs$pracid, gp_rel_size = inputs$gp_rel_size,
+  seed = inputs$seed, write_csv = FALSE
+)
+```
+
+The treatment wrappers rebuild the simulation themselves. They do not read
+the `ehr` object or a saved CSV folder. Transfer after time zero ends EHR
+observation; it does not automatically terminate the latent assigned strategy.
+
+The wrapper returns results in memory. To save a result and its settings,
+explicitly run:
+
+```{r save-run, eval=FALSE, purl=FALSE}
+saveRDS(
+  list(
+    inputs = inputs,
+    specs = fixed_specs,
+    package_description = packageDescription("EHRSim"),
+    session = sessionInfo(),
+    result = fixed_truth
+  ),
+  file = "fixed_course_aspirin_run.rds"
+)
+```
+
+`package_description` records the package version and the Git commit field
+when installed from GitHub. `session` records R and loaded package versions.
+The RDS file is written to the current working directory.
+
+## Scope and practical checks
+
+These contrasts are conditional on retained patient and hazard histories.
+The treatment layer changes exposure and mortality hazards but does not
+regenerate disease dates, other trajectories or trigger events under each
+intervention. Scientific calibration and estimator-recovery studies require
+additional evidence.
+
+If the eligible cohort is empty, the wrapper gives an explicit error. A larger
+practice or different seed may produce eligible patients, but also changes the
+simulation. For missing-trigger or missing-coefficient errors, check names
+against the bundled model; changing a descriptive label cannot add the missing
+mechanism. Consult the detailed function help for supported fields:
+
+```{r other-help, eval=FALSE}
+?truth_persistent_course_treatment
+?truth_episodic_course_treatment
+```

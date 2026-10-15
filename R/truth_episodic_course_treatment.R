@@ -14,26 +14,86 @@
 #' target population is automatically restricted to latent-eligible patients
 #' who are observable in the final analyst-visible EHR at time zero.
 #'
-#' @param pracid Integer practice identifier.
-#' @param gp_rel_size Numeric relative size of the GP practice.
-#' @param seed Integer random seed used for reproducibility.
+#' @inheritParams truth_fixed_course_treatment
 #' @param specs A named list containing `strategy_type`, `drug_name`,
 #'   `population`, `start_trigger_cols`, `time_zero_col`, a positive
 #'   `course_duration_days`, `affected_cause`, `affected_hazard_column`, and
-#'   positive numeric `horizons`. Optional stopping labels and columns must be
-#'   supplied together.
+#'   positive numeric `horizons`. See the specification sections for meanings
+#'   and optional fields.
+#'
+#' @inheritSection truth_fixed_course_treatment Common specification fields
+#' @section Episodic fields:
+#' `strategy_type` accepts `"episodic_course"`, `"episodic_triggered"`,
+#' `"episodic_course_one_stop"`, or `"episodic_course_restart"`. The trigger
+#' columns, duration, delay and `restart_after_stop` flag determine the rule;
+#' changing a type label alone does not enable restarting.
+#'
+#' `start_trigger_cols` contains existing comorbidity date columns. The first
+#' qualifying event defines time zero; later available trigger dates can begin
+#' further courses. First-MI and first-stroke columns represent first events,
+#' rather than every recurrent event. `course_duration_days` is positive and
+#' `course_delay_days` is non-negative, defaulting to zero when omitted. Optional
+#' `start_trigger_label` labels the coefficient output.
+#'
+#' `restart_after_stop` is a single logical value, defaulting to `FALSE`. With
+#' `FALSE`, the first qualifying patient-level stop applies across later
+#' courses. With `TRUE`, each course is matched to the first stop at or after
+#' its scheduled start and before its planned end. One stop can therefore
+#' affect several overlapping courses. Later triggers can initiate treatment
+#' again after an earlier course stopped.
+#'
+#' Overlapping courses produce binary treatment activity; they do not multiply
+#' the treatment effect. Stop fields produce both a no-stopping and a stopping
+#' version. Both retain course ends; only the latter applies event-triggered
+#' stops. The version names include `episodic_restart` when the restart flag is
+#' `TRUE`. Without stop fields, only the no-stopping version is constructed.
+#'
+#' @inheritSection truth_fixed_course_treatment Eligibility and observation
+#' @inheritSection truth_fixed_course_treatment Effect summaries
 #'
 #' @return A list containing:
 #' \describe{
 #'   \item{strategy_family}{The treatment-strategy family, here `"episodic"`.}
 #'   \item{specs}{The input treatment-effect specification.}
 #'   \item{eligible}{The eligible population used for the treatment analysis.}
-#'   \item{treatment_cohort}{The post-eligibility treatment cohort used in the analysis.}
-#'   \item{truth_worlds}{The simulated intervention worlds generated for the strategy.}
+#'   \item{treatment_cohort}{Follow-up intervals with natural and assigned
+#'   exposure flags.}
+#'   \item{truth_worlds}{Interval histories under natural, forced-treatment and
+#'   forced-no-treatment strategies, with reconstructed hazards and survival.}
 #'   \item{truth_treatment_effects}{Treatment-effect truth tables, including
 #'   simulation metadata and the treatment coefficients used.}
-#'   \item{triggers}{The trigger information used to define episodic treatment starts.}
-#'   \item{episode_triggers}{Episode-level trigger information for the episodic strategy.}
+#'   \item{triggers}{Available trigger dates before eligibility filtering.}
+#'   \item{episode_triggers}{Eligible episode triggers with scheduled course
+#'   starts, planned ends and stopping-version ends.}
+#' }
+#' @seealso [truth_fixed_course_treatment()],
+#'   [truth_persistent_course_treatment()]. For a walkthrough, use
+#'   `vignette("treatment-truth", package = "EHRSim")`.
+#' @examples
+#' episodic_specs <- list(
+#'   strategy_type = "episodic_course_restart",
+#'   restart_after_stop = TRUE,
+#'   drug_name = "aspirin",
+#'   population = "first_vascular_event_aspirin_naive",
+#'   start_trigger_label = "first_vascular_event",
+#'   start_trigger_cols = c("mi_event_first_date", "stroke_event_first_date",
+#'                          "chd_onset_date", "pvd_onset_date",
+#'                          "other_athero_onset_date"),
+#'   time_zero_col = "first_vascular_event_date",
+#'   course_duration_days = 365L,
+#'   course_delay_days = 0L,
+#'   stop_trigger_labels = c("upper_gi_bleed", "peptic_ulcer"),
+#'   stop_trigger_cols = c("upper_gi_bleed_event_date", "peptic_ulcer_event_date"),
+#'   affected_cause = "non_communicable_death",
+#'   affected_hazard_column = "lnhr_all_1",
+#'   horizons = c(1, 5, 10)
+#' )
+#' \dontrun{
+#' episodic_truth <- truth_episodic_course_treatment(
+#'   pracid = 1L, gp_rel_size = 1, seed = 34637L, specs = episodic_specs
+#' )
+#' episodic_truth$truth_treatment_effects$contrast_population
+#' head(episodic_truth$episode_triggers)
 #' }
 #' @export
 truth_episodic_course_treatment <- function(pracid, gp_rel_size, seed, specs){
